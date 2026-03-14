@@ -32,8 +32,7 @@ APP_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# Required for AJAX endpoints on app.my-tower.co.il
-# Without these, server returns {"data":false} even with correct credentials
+# Required for checkPhone — server returns {"data":false} without these
 AJAX_HEADERS = {
     "User-Agent": MOBILE_UA,
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -41,6 +40,16 @@ AJAX_HEADERS = {
     "Origin": "https://app.my-tower.co.il",
     "Referer": "https://app.my-tower.co.il/",
     "Accept": "application/json, text/javascript, */*; q=0.01",
+}
+
+# Login uses form submit (NOT XHR) — server returns redirect to /index.php?user_id=XXXX
+# X-Requested-With must NOT be set here, or server returns JSON instead of redirect
+LOGIN_HEADERS = {
+    "User-Agent": MOBILE_UA,
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Origin": "https://app.my-tower.co.il",
+    "Referer": "https://app.my-tower.co.il/",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
 # Entity unique ID prefixes

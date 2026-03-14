@@ -14,7 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN, CONF_PHONE, CONF_AUTH_TOKEN, CONF_USER_ID,
-    APP_BASE_URL, MOBILE_UA, COOKIE_AUTH, AJAX_HEADERS,
+    APP_BASE_URL, MOBILE_UA, COOKIE_AUTH, AJAX_HEADERS, LOGIN_HEADERS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -199,7 +199,7 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data = {"phone": phone_e164, "code": otp}
 
         async with _aiohttp.ClientSession(
-            cookie_jar=jar, headers=AJAX_HEADERS
+            cookie_jar=jar, headers=LOGIN_HEADERS
         ) as session:
             async with session.post(
                 f"{APP_BASE_URL}/api/login",
