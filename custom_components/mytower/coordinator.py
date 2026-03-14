@@ -275,27 +275,52 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         meeting_place: str,
         date: str | None = None,
         due_date: str | None = None,
+        description: str = "",
+        car_number: str = "",
     ) -> bool:
-        """Add a guest. guest_type: 'temporary' or 'regular'."""
-        payload = {
-            "guestName": name,
-            "guestPhone": phone,
-            "guestType": guest_type,
-            "meetingPlace": meeting_place,
-        }
-        if guest_type == "temporary" and date:
-            payload["estimateDate"] = date
-        elif guest_type == "regular" and due_date:
-            payload["dueToDate"] = due_date
+        """Add a guest. guest_type: 'temporary' or 'regular'.
+
+        All form fields must be present (even empty ones) or the server
+        returns HTTP 500 with empty body.  Reverse-engineered from
+        /guests/visitors → new FormData($('#guestForm')[0]).
+        """
+        import aiohttp
+        from datetime import datetime, timedelta
+
+        today = datetime.now().strftime("%d/%m/%Y")
+        next_month = (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+
+        form = aiohttp.FormData()
+        # --- fields captured by new FormData (order matches the HTML form) ---
+        form.add_field("guestType", guest_type)
+        form.add_field("name", name)
+        form.add_field("guestPassport", "")
+        form.add_field("phone", phone)
+        form.add_field("carNumber", car_number)
+        form.add_field("allowBloogate", "0")
+        form.add_field("meetingPlace", meeting_place)
+        form.add_field("estimateDate", date or today)
+        form.add_field("dueToDate", due_date or next_month)
+        form.add_field("description", description)
+        # --- fields appended by JS after FormData creation ---
+        form.add_field("visitorType", guest_type)
+        form.add_field("visitorId", "")
         try:
             async with self._app_session() as session:
                 async with session.post(
                     f"{APP_BASE_URL}/api/createGuest",
-                    data=payload,
-                    headers={"X-Requested-With": "XMLHttpRequest"},
+                    data=form,
                 ) as resp:
-                    result = await resp.json(content_type=None)
-                    success = result.get("result") == "success" or result.get("data") == "success"
+                    raw = await resp.text()
+                    _LOGGER.debug("MyTower: add_guest raw response: %s", raw)
+                    import json as _json
+                    try:
+                        outer = _json.loads(raw)
+                        # Response: {"data": {"result": "success", "msg": "..."}}
+                        result = outer.get("data", outer) if isinstance(outer, dict) else {}
+                    except Exception:
+                        result = {}
+                    success = result.get("result") == "success"
                     _LOGGER.info("MyTower: add_guest result: %s", result)
                     return success
         except Exception as err:
@@ -311,7 +336,14 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data={"visitorId": visitor_id, "visitorType": visitor_type},
                     headers={"X-Requested-With": "XMLHttpRequest"},
                 ) as resp:
-                    result = await resp.json(content_type=None)
+                    raw = await resp.text()
+                    _LOGGER.debug("MyTower: remove_guest raw response: %s", raw)
+                    import json as _json
+                    try:
+                        outer = _json.loads(raw)
+                        result = outer.get("data", outer) if isinstance(outer, dict) else {}
+                    except Exception:
+                        result = {}
                     success = result.get("result") == "success"
                     _LOGGER.info("MyTower: remove_guest result: %s", result)
                     return success

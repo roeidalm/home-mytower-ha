@@ -45,6 +45,20 @@ add_guest:
       example: "25/12/2025"
       selector:
         text:
+    description:
+      name: Notes
+      description: Optional notes about the guest
+      required: false
+      example: "חבר"
+      selector:
+        text:
+    car_number:
+      name: Car Number
+      description: Guest car license plate (optional)
+      required: false
+      example: "12-345-67"
+      selector:
+        text:
 
 remove_guest:
   name: Remove Guest

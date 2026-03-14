@@ -46,8 +46,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             meeting_place_key = call.data.get("meeting_place", "lobby")
             meeting_place = MEETING_PLACE_APARTMENT if meeting_place_key == "apartment" else MEETING_PLACE_LOBBY
             date = call.data.get("date")
+            description = call.data.get("description", "")
+            car_number = call.data.get("car_number", "")
             coord = next(iter(hass.data[DOMAIN].values()))
-            success = await coord.add_guest(name, phone, guest_type, meeting_place, date=date)
+            success = await coord.add_guest(
+                name, phone, guest_type, meeting_place,
+                date=date, description=description, car_number=car_number,
+            )
             if not success:
                 _LOGGER.error("MyTower: add_guest failed for %s", name)
             await coord.async_refresh()
