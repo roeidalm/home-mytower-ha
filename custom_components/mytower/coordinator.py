@@ -165,14 +165,20 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Extract payment info from /houseCommittee HTML."""
         paid_count = len(re.findall(r'status-paid', html))
 
-        # Monthly fee amount (first ₪ occurrence)
-        fee_m = re.search(r'([\d,]+\.?\d*)₪', html)
-        monthly_fee = (
-            float(fee_m.group(1).replace(",", "")) if fee_m else 0.0
-        )
+        # Monthly fee: look for the consistent per-row amount
+        # The fee appears once per month row — take the most frequent ₪ value
+        all_amounts = re.findall(r'([\d,]+\.\d{2})₪', html)
+        monthly_fee = 0.0
+        if all_amounts:
+            # Most frequent value = the monthly fee (appears 12 times, once per month)
+            from collections import Counter
+            most_common = Counter(all_amounts).most_common(1)[0][0]
+            monthly_fee = float(most_common.replace(",", ""))
 
         # Year
-        year_m = re.search(r'"selected-year"[^>]*>(\d{4})<', html)
+        year_m = re.search(r'selected-year[^>]*>(\d{4})<', html)
+        if not year_m:
+            year_m = re.search(r'>(\d{4})<', html)
         year = int(year_m.group(1)) if year_m else None
 
         return {

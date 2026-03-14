@@ -16,6 +16,15 @@
         }
       }
     },
+    "step": {
+      "reauth_confirm": {
+        "title": "MyTower — אימות מחדש",
+        "description": "הטוקן פג תוקף. אמת מחדש עם מספר הטלפון שלך.",
+        "data": {
+          "phone": "מספר טלפון"
+        }
+      }
+    },
     "error": {
       "invalid_phone": "מספר טלפון לא תקין",
       "phone_not_found": "מספר הטלפון לא נמצא במערכת",
@@ -24,7 +33,8 @@
       "cannot_connect": "לא ניתן להתחבר לשרת MyTower"
     },
     "abort": {
-      "already_configured": "MyTower כבר מוגדר עבור משתמש זה"
+      "already_configured": "MyTower כבר מוגדר עבור משתמש זה",
+      "reauth_successful": "האימות עודכן בהצלחה"
     }
   }
 }

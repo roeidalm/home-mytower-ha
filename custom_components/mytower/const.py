@@ -5,7 +5,7 @@ DOMAIN = "mytower"
 APP_BASE_URL = "https://app.my-tower.co.il"
 API_BASE_URL = "https://api.my-tower.co.il/api"
 
-DEFAULT_SCAN_INTERVAL = 5  # minutes
+DEFAULT_SCAN_INTERVAL = 60  # minutes — poll every hour
 
 # Config entry keys
 CONF_PHONE = "phone"

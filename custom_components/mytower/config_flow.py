@@ -68,6 +68,37 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"phone": self._phone},
         )
 
+    # ── Re-auth (token expired) ───────────────────────────────────────────────
+
+    async def async_step_reauth(self, entry_data: dict) -> FlowResult:
+        """Triggered by HA when the stored token stops working."""
+        self._phone = entry_data.get(CONF_PHONE, "")
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict | None = None
+    ) -> FlowResult:
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            phone = user_input.get(CONF_PHONE, self._phone).strip()
+            try:
+                ok = await mytower_check_phone(phone)
+                if ok:
+                    self._phone = phone
+                    return await self.async_step_otp()
+                else:
+                    errors[CONF_PHONE] = "phone_not_found"
+            except Exception:
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PHONE, default=self._phone): str}),
+            errors=errors,
+            description_placeholders={"phone": self._phone},
+        )
+
     # ── Step 2: OTP ──────────────────────────────────────────────────────────
 
     async def async_step_otp(
@@ -84,17 +115,27 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     result = await mytower_login(self._phone, otp)
                     if result:
-                        # Prevent duplicate entries for same user
-                        await self.async_set_unique_id(result["user_id"])
-                        self._abort_if_unique_id_configured()
+                        new_data = {
+                            CONF_PHONE: self._phone,
+                            CONF_AUTH_TOKEN: result["auth_token"],
+                            CONF_USER_ID: result["user_id"],
+                        }
 
+                        # Re-auth: update existing entry instead of creating new one
+                        existing = await self.async_set_unique_id(result["user_id"])
+                        if self.source == config_entries.SOURCE_REAUTH:
+                            self.hass.config_entries.async_update_entry(
+                                self._get_reauth_entry(), data=new_data
+                            )
+                            await self.hass.config_entries.async_reload(
+                                self._get_reauth_entry().entry_id
+                            )
+                            return self.async_abort(reason="reauth_successful")
+
+                        self._abort_if_unique_id_configured()
                         return self.async_create_entry(
                             title=f"MyTower ({result['user_id']})",
-                            data={
-                                CONF_PHONE: self._phone,
-                                CONF_AUTH_TOKEN: result["auth_token"],
-                                CONF_USER_ID: result["user_id"],
-                            },
+                            data=new_data,
                         )
                     else:
                         errors["otp"] = "invalid_auth"
