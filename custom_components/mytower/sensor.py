@@ -53,15 +53,29 @@ class MyTowerBaseSensor(CoordinatorEntity[MyTowerCoordinator], SensorEntity):
 
 
 class MyTowerMessagesSensor(MyTowerBaseSensor):
-    """Number of unread messages."""
+    """Unread messages — displayed as Hebrew text."""
 
-    _attr_name = "MyTower הודעות שלא נקראו"
+    _attr_name = "MyTower הודעות"
     _attr_icon = "mdi:message-badge"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = "הודעות"
+    # No state_class / unit — this is a text sensor
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, ENTITY_MESSAGES)
+
+    @property
+    def native_value(self) -> str:
+        count = self.coordinator.data.get(self._key, 0) or 0
+        if count == 0:
+            return "אין הודעות חדשות"
+        elif count == 1:
+            return "הודעה חדשה אחת"
+        else:
+            return f"{count} הודעות חדשות"
+
+    @property
+    def extra_state_attributes(self):
+        """Expose raw count for automations."""
+        return {"count": self.coordinator.data.get(self._key, 0) or 0}
 
 
 class MyTowerMonthlyFeeSensor(MyTowerBaseSensor):
