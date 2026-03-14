@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MyTower — כניסה",
+        "description": "הכנס את מספר הטלפון שלך (כולל קידומת מדינה, לדוגמה: 972501234567 או 0501234567)",
+        "data": {
+          "phone": "מספר טלפון"
+        }
+      },
+      "otp": {
+        "title": "MyTower — קוד אימות",
+        "description": "קוד SMS נשלח ל-{phone}. הכנס את הקוד בן 6 הספרות",
+        "data": {
+          "otp": "קוד SMS"
+        }
+      }
+    },
+    "error": {
+      "invalid_phone": "מספר טלפון לא תקין",
+      "phone_not_found": "מספר הטלפון לא נמצא במערכת",
+      "invalid_otp": "קוד לא תקין (4–6 ספרות)",
+      "invalid_auth": "קוד שגוי או פג תוקף — נסה שוב",
+      "cannot_connect": "לא ניתן להתחבר לשרת MyTower"
+    },
+    "abort": {
+      "already_configured": "MyTower כבר מוגדר עבור משתמש זה"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "mytower",
+  "name": "MyTower",
+  "version": "0.1.0",
+  "documentation": "https://github.com/roeidalm/home-mytower-ha",
+  "issue_tracker": "https://github.com/roeidalm/home-mytower-ha/issues",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@roeidalm"],
+  "iot_class": "cloud_polling",
+  "config_flow": true
+}
