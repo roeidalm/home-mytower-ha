@@ -1,0 +1,141 @@
+add_guest:
+  name: Add Guest
+  description: Add a temporary or permanent guest to MyTower
+  fields:
+    name:
+      name: Guest Name
+      description: Full name of the guest
+      required: true
+      example: "ישראל ישראלי"
+      selector:
+        text:
+    phone:
+      name: Guest Phone
+      description: Guest phone number
+      required: true
+      example: "0501234567"
+      selector:
+        text:
+    guest_type:
+      name: Guest Type
+      description: temporary or regular
+      required: true
+      default: "temporary"
+      selector:
+        select:
+          options:
+            - "temporary"
+            - "regular"
+    meeting_place:
+      name: Meeting Place
+      description: Where to meet the guest
+      required: true
+      default: "lobby"
+      selector:
+        select:
+          options:
+            - value: "lobby"
+              label: "Wait in Lobby"
+            - value: "apartment"
+              label: "Come up to Apartment"
+    date:
+      name: Date
+      description: Visit date in DD/MM/YYYY format (for temporary guests)
+      required: false
+      example: "25/12/2025"
+      selector:
+        text:
+
+remove_guest:
+  name: Remove Guest
+  description: Remove a guest from MyTower by visitor ID
+  fields:
+    visitor_id:
+      name: Visitor ID
+      description: The visitor ID (visible in sensor attributes)
+      required: true
+      example: "12345"
+      selector:
+        text:
+    visitor_type:
+      name: Visitor Type
+      description: temporary or regular
+      required: false
+      default: "temporary"
+      selector:
+        select:
+          options:
+            - "temporary"
+            - "regular"
+
+submit_problem:
+  name: Submit Problem
+  description: Submit a maintenance or cleaning problem ticket to MyTower
+  fields:
+    category:
+      name: Category
+      description: Problem category
+      required: true
+      default: "maintenance"
+      selector:
+        select:
+          options:
+            - value: "cleaning"
+              label: "Cleaning"
+            - value: "maintenance"
+              label: "Maintenance"
+            - value: "gardening"
+              label: "Gardening & Pest Control"
+            - value: "resident_services"
+              label: "Resident Services"
+    location:
+      name: Location
+      description: Where is the problem
+      required: true
+      default: "main_lobby"
+      selector:
+        select:
+          options:
+            - value: "floor_lobby"
+              label: "Floor Lobby"
+            - value: "resident_parking"
+              label: "Resident Parking"
+            - value: "main_lobby"
+              label: "Main Lobby"
+            - value: "trash_room"
+              label: "Trash Room"
+            - value: "entrance"
+              label: "Entrance Area"
+    description:
+      name: Description
+      description: Describe the problem
+      required: true
+      example: "המנורה בלובי קומה 5 שרופה"
+      selector:
+        text:
+          multiline: true
+    sub_category:
+      name: Sub-category
+      description: More specific problem type
+      required: false
+      default: "maintenance_other"
+      selector:
+        select:
+          options:
+            - value: "management_fee"
+              label: "Management Fee Inquiry"
+            - value: "elevator_malfunction"
+              label: "Elevator Malfunction"
+            - value: "lighting_malfunction"
+              label: "Lighting Malfunction"
+            - value: "door_malfunction"
+              label: "Door Malfunction"
+            - value: "maintenance_other"
+              label: "Maintenance - Other"
+    phone:
+      name: Phone (optional)
+      description: Contact phone for this ticket. Defaults to your registered number.
+      required: false
+      example: "0501234567"
+      selector:
+        text:

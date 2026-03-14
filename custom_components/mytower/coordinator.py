@@ -25,6 +25,7 @@ from .const import (
     COOKIE_PROJECT_VALUE,
     MOBILE_UA,
     APP_HEADERS,
+    CONF_PHONE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ _LOGGER = logging.getLogger(__name__)
 class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Manages all communication with the MyTower API."""
 
-    def __init__(self, hass: HomeAssistant, auth_token: str, user_id: str) -> None:
+    def __init__(self, hass: HomeAssistant, auth_token: str, user_id: str, phone: str = "") -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -43,6 +44,7 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # auth_token = URL-decoded value of CRM_user_users cookie
         self.auth_token = auth_token
         self.user_id = user_id
+        self.phone = phone  # registered phone number (for problem tickets etc.)
 
         # Discovered at setup — list of {"uuid": ..., "name": ...}
         self.gates: list[dict[str, str]] = []
@@ -171,6 +173,11 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     html = await resp.text()
                 data.update(self._parse_payments(html))
 
+            # 3. Guests count
+            guests = await self.get_guests()
+            data["guests_count"] = len(guests)
+            data["guests"] = guests
+
             _LOGGER.debug("MyTower data: %s", data)
             return data
 
@@ -232,6 +239,117 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return success
         except Exception as err:
             _LOGGER.error("MyTower: open_gate error: %s", err)
+            return False
+
+    async def get_guests(self) -> list[dict]:
+        """Scrape guest list from /guests HTML page."""
+        try:
+            async with self._app_session() as session:
+                async with session.get(f"{APP_BASE_URL}/guests") as resp:
+                    html = await resp.text()
+            guests = []
+            for m in re.finditer(r'id=["\']guest-(\d+)["\']', html):
+                visitor_id = m.group(1)
+                start = m.start()
+                block = html[start:start + 600]
+                name_m = re.search(r'class=["\']?guest-name["\']?[^>]*>([^<]+)<', block)
+                type_m = re.search(r'class=["\']?guest-type["\']?[^>]*>([^<]+)<', block)
+                phone_m = re.search(r'class=["\']?guest-phone["\']?[^>]*>([^<]+)<', block)
+                guests.append({
+                    "id": visitor_id,
+                    "name": name_m.group(1).strip() if name_m else "?",
+                    "type": type_m.group(1).strip() if type_m else "?",
+                    "phone": phone_m.group(1).strip() if phone_m else "",
+                })
+            _LOGGER.debug("MyTower: found %d guests", len(guests))
+            return guests
+        except Exception as err:
+            _LOGGER.error("MyTower: get_guests error: %s", err)
+            return []
+
+    async def add_guest(
+        self,
+        name: str,
+        phone: str,
+        guest_type: str,
+        meeting_place: str,
+        date: str | None = None,
+        due_date: str | None = None,
+    ) -> bool:
+        """Add a guest. guest_type: 'temporary' or 'regular'."""
+        payload = {
+            "guestName": name,
+            "guestPhone": phone,
+            "guestType": guest_type,
+            "meetingPlace": meeting_place,
+        }
+        if guest_type == "temporary" and date:
+            payload["estimateDate"] = date
+        elif guest_type == "regular" and due_date:
+            payload["dueToDate"] = due_date
+        try:
+            async with self._app_session() as session:
+                async with session.post(
+                    f"{APP_BASE_URL}/api/createGuest",
+                    data=payload,
+                    headers={"X-Requested-With": "XMLHttpRequest"},
+                ) as resp:
+                    result = await resp.json(content_type=None)
+                    success = result.get("result") == "success" or result.get("data") == "success"
+                    _LOGGER.info("MyTower: add_guest result: %s", result)
+                    return success
+        except Exception as err:
+            _LOGGER.error("MyTower: add_guest error: %s", err)
+            return False
+
+    async def remove_guest(self, visitor_id: str, visitor_type: str = "temporary") -> bool:
+        """Remove a guest by visitor_id."""
+        try:
+            async with self._app_session() as session:
+                async with session.post(
+                    f"{APP_BASE_URL}/api/deleteGuest",
+                    data={"visitorId": visitor_id, "visitorType": visitor_type},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
+                ) as resp:
+                    result = await resp.json(content_type=None)
+                    success = result.get("result") == "success"
+                    _LOGGER.info("MyTower: remove_guest result: %s", result)
+                    return success
+        except Exception as err:
+            _LOGGER.error("MyTower: remove_guest error: %s", err)
+            return False
+
+    async def submit_problem(
+        self,
+        category_id: int,
+        sub_category_id: int,
+        location_id: int,
+        description: str,
+        phone: str | None = None,
+        complainant_id: int = 1,
+    ) -> bool:
+        """Submit a problem ticket."""
+        payload = {
+            "category_id": category_id,
+            "sub_category_id": sub_category_id,
+            "location_id": location_id,
+            "description": description,
+            "phone": phone or self.phone,  # use registered phone as default
+            "complainant_id": complainant_id,
+        }
+        try:
+            async with self._app_session() as session:
+                async with session.post(
+                    f"{APP_BASE_URL}/problems/create",
+                    data=payload,
+                    headers={"X-Requested-With": "XMLHttpRequest", "Origin": APP_BASE_URL},
+                ) as resp:
+                    result = await resp.json(content_type=None)
+                    success = result.get("result") == "success" or resp.status in (200, 201)
+                    _LOGGER.info("MyTower: submit_problem result: %s status=%s", result, resp.status)
+                    return success
+        except Exception as err:
+            _LOGGER.error("MyTower: submit_problem error: %s", err)
             return False
 
 

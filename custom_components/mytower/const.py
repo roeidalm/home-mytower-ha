@@ -57,3 +57,41 @@ ENTITY_MESSAGES = "messages"
 ENTITY_MONTHLY_FEE = "monthly_fee"
 ENTITY_PAID_MONTHS = "paid_months"
 ENTITY_GATE_PREFIX = "gate_"
+
+# Guest entity
+ENTITY_GUESTS_COUNT = "guests_count"
+
+# Services
+SERVICE_ADD_GUEST = "add_guest"
+SERVICE_REMOVE_GUEST = "remove_guest"
+SERVICE_SUBMIT_PROBLEM = "submit_problem"
+
+# Guest meeting places
+MEETING_PLACE_LOBBY = "1424"
+MEETING_PLACE_APARTMENT = "1425"
+
+# Problem category IDs
+PROBLEM_CATEGORIES = {
+    "cleaning": 34,
+    "maintenance": 35,
+    "gardening": 37,
+    "resident_services": 38,
+}
+
+# Problem sub-category IDs
+PROBLEM_SUB_CATEGORIES = {
+    "management_fee": 6108,
+    "elevator_malfunction": 6109,
+    "lighting_malfunction": 6110,
+    "door_malfunction": 6112,
+    "maintenance_other": 6113,
+}
+
+# Problem location IDs
+PROBLEM_LOCATIONS = {
+    "floor_lobby": 15360,
+    "resident_parking": 15361,
+    "main_lobby": 15362,
+    "trash_room": 15363,
+    "entrance": 15364,
+}
