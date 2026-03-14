@@ -32,6 +32,17 @@ APP_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+# Required for AJAX endpoints on app.my-tower.co.il
+# Without these, server returns {"data":false} even with correct credentials
+AJAX_HEADERS = {
+    "User-Agent": MOBILE_UA,
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": "https://app.my-tower.co.il",
+    "Referer": "https://app.my-tower.co.il/",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+}
+
 # Entity unique ID prefixes
 ENTITY_MESSAGES = "messages"
 ENTITY_MONTHLY_FEE = "monthly_fee"

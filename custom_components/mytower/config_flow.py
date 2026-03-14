@@ -14,7 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN, CONF_PHONE, CONF_AUTH_TOKEN, CONF_USER_ID,
-    APP_BASE_URL, MOBILE_UA, COOKIE_AUTH,
+    APP_BASE_URL, MOBILE_UA, COOKIE_AUTH, AJAX_HEADERS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -172,21 +172,21 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _check_phone(self, clean_phone: str) -> bool:
         """POST /api/checkPhone — triggers SMS. clean_phone = 9 digits."""
         session = async_get_clientsession(self.hass)
-        headers = {"User-Agent": MOBILE_UA}
         data = {"phone": clean_phone, "country": "972"}
 
         async with session.post(
             f"{APP_BASE_URL}/api/checkPhone",
             data=data,
-            headers=headers,
+            headers=AJAX_HEADERS,
         ) as resp:
             text = await resp.text()
             _LOGGER.debug("checkPhone raw response: %s", text)
             try:
-                result = await resp.json(content_type=None)
-            except Exception:
                 import json as _json
                 result = _json.loads(text)
+            except Exception:
+                _LOGGER.error("checkPhone non-JSON response: %s", text)
+                return False
             return result.get("data") is True
 
     async def _login(self, clean_phone: str, otp: str) -> dict | None:
@@ -195,12 +195,11 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Use a fresh session with cookie jar to capture Set-Cookie
         jar = _aiohttp.CookieJar(unsafe=True)
-        headers = {"User-Agent": MOBILE_UA}
         phone_e164 = f"972{clean_phone}"
         data = {"phone": phone_e164, "code": otp}
 
         async with _aiohttp.ClientSession(
-            cookie_jar=jar, headers=headers
+            cookie_jar=jar, headers=AJAX_HEADERS
         ) as session:
             async with session.post(
                 f"{APP_BASE_URL}/api/login",
