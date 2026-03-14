@@ -6,6 +6,7 @@ import logging
 import re
 import urllib.parse
 from datetime import timedelta
+from urllib.parse import unquote as url_decode
 from typing import Any
 
 import aiohttp
@@ -61,7 +62,7 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _api_headers(self) -> dict[str, str]:
         """Headers needed for api.my-tower.co.il (REST API)."""
         return {
-            "Auth-Token": self.auth_token,
+            "Auth-Token": url_decode(self.auth_token),  # header needs decoded value
             "Locale": "he",
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -139,7 +140,12 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"{APP_BASE_URL}/api/get_msgs_num"
                 ) as resp:
                     result = await resp.json(content_type=None)
-                    data["messages"] = int(result.get("data", 0))
+                    raw = result.get("data", 0)
+                    try:
+                        data["messages"] = int(raw) if raw != "" else 0
+                    except (ValueError, TypeError):
+                        _LOGGER.warning("get_msgs_num unexpected value: %r — token may be expired", raw)
+                        data["messages"] = 0
 
                 # 2. Payment status (house committee)
                 async with session.get(

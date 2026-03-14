@@ -236,10 +236,12 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return None
 
                 # Extract auth token from shared cookie jar
+                # Keep URL-encoded form — coordinator sends it as cookie value
+                # (aiohttp cookie jar stores raw Set-Cookie value)
                 auth_token = None
                 for cookie in self._jar:
                     if cookie.key == COOKIE_AUTH:
-                        auth_token = urllib.parse.unquote(cookie.value)
+                        auth_token = cookie.value  # raw, URL-encoded
                         break
 
                 if not auth_token:
