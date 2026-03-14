@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import urllib.parse
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN, CONF_PHONE, CONF_AUTH_TOKEN, CONF_USER_ID,
-    APP_BASE_URL, MOBILE_UA, COOKIE_AUTH, AJAX_HEADERS, LOGIN_HEADERS,
+    APP_BASE_URL, COOKIE_AUTH, AJAX_HEADERS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,13 +25,13 @@ STEP_OTP_SCHEMA = vol.Schema({vol.Required("otp"): str})
 
 def _normalize_phone(phone: str) -> str:
     """
-    Normalize any Israeli phone format to the digits MyTower expects.
+    Normalize any Israeli phone format to 9 digits (no leading 0, no country code).
     Input:  +972501234567 / 972501234567 / 0501234567 / 501234567
-    Output: 501234567  (9 digits, no leading 0, no country code)
+    Output: 501234567
     """
     phone = phone.strip().replace("-", "").replace(" ", "")
-    phone = re.sub(r'^\+?972', '', phone)   # strip +972 or 972
-    phone = phone.lstrip('0')               # strip leading 0
+    phone = re.sub(r'^\+?972', '', phone)
+    phone = phone.lstrip('0')
     return phone
 
 
@@ -41,8 +41,9 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        self._phone: str = ""          # raw input (kept for display)
-        self._clean_phone: str = ""    # normalized (sent to server)
+        self._phone: str = ""           # raw input (for display)
+        self._clean_phone: str = ""     # 9-digit normalized
+        self._jar: aiohttp.CookieJar | None = None   # shared across steps!
 
     # ── Step 1: phone number ──────────────────────────────────────────────────
 
@@ -54,7 +55,6 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             raw = user_input[CONF_PHONE].strip()
             clean = _normalize_phone(raw)
-
             _LOGGER.debug("checkPhone: raw=%s clean=%s", raw, clean)
 
             if len(clean) != 9 or not clean.isdigit():
@@ -78,7 +78,7 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_PHONE_SCHEMA,
             errors=errors,
             description_placeholders={
-                "example": "0501234567 / 972501234567 / +972501234567"
+                "example": "0501234567 / 501234567 / 972501234567"
             },
         )
 
@@ -167,87 +167,83 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"phone": self._phone},
         )
 
-    # ── HTTP helpers (use HA's managed session) ───────────────────────────────
+    # ── HTTP helpers — SAME cookie jar across checkPhone + login ─────────────
 
     async def _check_phone(self, clean_phone: str) -> bool:
-        """POST /api/checkPhone — triggers SMS. clean_phone = 9 digits."""
-        session = async_get_clientsession(self.hass)
-        data = {"phone": clean_phone, "country": "972"}
+        """
+        POST /api/checkPhone — triggers SMS OTP.
+        Creates a shared cookie jar used by _login too.
+        """
+        # Fresh jar for each new login attempt
+        self._jar = aiohttp.CookieJar(unsafe=True)
 
-        async with session.post(
-            f"{APP_BASE_URL}/api/checkPhone",
-            data=data,
-            headers=AJAX_HEADERS,
-        ) as resp:
-            text = await resp.text()
-            _LOGGER.debug("checkPhone raw response: %s", text)
-            try:
-                import json as _json
-                result = _json.loads(text)
-            except Exception:
-                _LOGGER.error("checkPhone non-JSON response: %s", text)
-                return False
-            return result.get("data") is True
+        async with aiohttp.ClientSession(
+            cookie_jar=self._jar, headers=AJAX_HEADERS
+        ) as session:
+            data = {"phone": clean_phone, "country": "972"}
+            async with session.post(
+                f"{APP_BASE_URL}/api/checkPhone", data=data
+            ) as resp:
+                text = await resp.text()
+                _LOGGER.debug("checkPhone response: %s", text)
+                try:
+                    result = json.loads(text)
+                except Exception:
+                    _LOGGER.error("checkPhone non-JSON: %s", text)
+                    return False
+                return result.get("data") is True
 
     async def _login(self, clean_phone: str, otp: str) -> dict | None:
         """
-        POST /api/login — returns {auth_token, user_id} or None.
-
-        The server returns JSON (not an HTTP redirect):
-          {"data": false}      → wrong/expired OTP
-          {"data": <int>}      → success, data IS the user_id
-          {"data": "<string>"} → new signup required
-        The JS in the app does: document.location.href = 'index.php?user_id=' + res.data
+        POST /api/login using the SAME cookie jar from _check_phone.
+        Server returns JSON: {"data": <user_id int>} on success,
+                             {"data": false} on wrong OTP.
         """
-        import json as _json
-        import aiohttp as _aiohttp
+        if self._jar is None:
+            _LOGGER.error("login called without prior checkPhone (no cookie jar)")
+            return None
 
-        jar = _aiohttp.CookieJar(unsafe=True)
         phone_e164 = f"972{clean_phone}"
         data = {"phone": phone_e164, "code": otp}
 
-        async with _aiohttp.ClientSession(
-            cookie_jar=jar, headers=AJAX_HEADERS
+        async with aiohttp.ClientSession(
+            cookie_jar=self._jar, headers=AJAX_HEADERS
         ) as session:
             async with session.post(
-                f"{APP_BASE_URL}/api/login",
-                data=data,
-                allow_redirects=False,
+                f"{APP_BASE_URL}/api/login", data=data, allow_redirects=False
             ) as resp:
                 text = await resp.text()
                 _LOGGER.debug("login response: %s", text)
 
                 try:
-                    result = _json.loads(text)
+                    result = json.loads(text)
                 except Exception:
-                    _LOGGER.error("login non-JSON response: %s", text)
+                    _LOGGER.error("login non-JSON: %s", text)
                     return None
 
                 data_val = result.get("data")
-                _LOGGER.debug("login data value: %r (type: %s)", data_val, type(data_val).__name__)
+                _LOGGER.debug("login data: %r (type=%s)", data_val, type(data_val).__name__)
 
-                # Wrong OTP or expired
-                if data_val is False or data_val == "false":
+                if data_val is False:
                     return None
 
-                # Success — data is the user_id integer
                 if isinstance(data_val, int):
                     user_id = str(data_val)
                 elif isinstance(data_val, str) and data_val.isdigit():
                     user_id = data_val
                 else:
-                    _LOGGER.error("login unexpected data value: %r", data_val)
+                    _LOGGER.error("login unexpected data: %r", data_val)
                     return None
 
-                # Extract auth token from cookie
+                # Extract auth token from shared cookie jar
                 auth_token = None
-                for cookie in jar:
+                for cookie in self._jar:
                     if cookie.key == COOKIE_AUTH:
                         auth_token = urllib.parse.unquote(cookie.value)
                         break
 
                 if not auth_token:
-                    _LOGGER.error("MyTower login: CRM_user_users cookie missing")
+                    _LOGGER.error("MyTower: CRM_user_users cookie not found after login")
                     return None
 
                 _LOGGER.info("MyTower login success: user_id=%s", user_id)
