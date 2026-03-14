@@ -190,35 +190,56 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return result.get("data") is True
 
     async def _login(self, clean_phone: str, otp: str) -> dict | None:
-        """POST /api/login — returns {auth_token, user_id} or None."""
+        """
+        POST /api/login — returns {auth_token, user_id} or None.
+
+        The server returns JSON (not an HTTP redirect):
+          {"data": false}      → wrong/expired OTP
+          {"data": <int>}      → success, data IS the user_id
+          {"data": "<string>"} → new signup required
+        The JS in the app does: document.location.href = 'index.php?user_id=' + res.data
+        """
+        import json as _json
         import aiohttp as _aiohttp
 
-        # Use a fresh session with cookie jar to capture Set-Cookie
         jar = _aiohttp.CookieJar(unsafe=True)
         phone_e164 = f"972{clean_phone}"
         data = {"phone": phone_e164, "code": otp}
 
         async with _aiohttp.ClientSession(
-            cookie_jar=jar, headers=LOGIN_HEADERS
+            cookie_jar=jar, headers=AJAX_HEADERS
         ) as session:
             async with session.post(
                 f"{APP_BASE_URL}/api/login",
                 data=data,
-                allow_redirects=True,
-                max_redirects=5,
+                allow_redirects=False,
             ) as resp:
-                final_url = str(resp.url)
-                _LOGGER.debug("login final_url: %s", final_url)
+                text = await resp.text()
+                _LOGGER.debug("login response: %s", text)
 
-                uid_m = re.search(r'user_id=(\d+)', final_url)
-                if not uid_m:
-                    _LOGGER.error(
-                        "MyTower login: no user_id in URL %s", final_url
-                    )
+                try:
+                    result = _json.loads(text)
+                except Exception:
+                    _LOGGER.error("login non-JSON response: %s", text)
                     return None
 
-                user_id = uid_m.group(1)
+                data_val = result.get("data")
+                _LOGGER.debug("login data value: %r (type: %s)", data_val, type(data_val).__name__)
 
+                # Wrong OTP or expired
+                if data_val is False or data_val == "false":
+                    return None
+
+                # Success — data is the user_id integer
+                if isinstance(data_val, int):
+                    user_id = str(data_val)
+                elif isinstance(data_val, str) and data_val.isdigit():
+                    user_id = data_val
+                else:
+                    _LOGGER.error("login unexpected data value: %r", data_val)
+                    return None
+
+                # Extract auth token from cookie
                 auth_token = None
                 for cookie in jar:
                     if cookie.key == COOKIE_AUTH:
@@ -229,4 +250,5 @@ class MyTowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.error("MyTower login: CRM_user_users cookie missing")
                     return None
 
+                _LOGGER.info("MyTower login success: user_id=%s", user_id)
                 return {"auth_token": auth_token, "user_id": user_id}
