@@ -51,18 +51,23 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # Auth helpers
     # ──────────────────────────────────────────────
 
-    def _app_cookies(self) -> dict[str, str]:
-        """Cookies needed for app.my-tower.co.il (PHP backend)."""
-        return {
-            COOKIE_AUTH: self.auth_token,
-            COOKIE_DEVICE: COOKIE_DEVICE_VALUE,
-            COOKIE_PROJECT: COOKIE_PROJECT_VALUE,
-        }
+    def _cookie_header(self) -> str:
+        """
+        Build a raw Cookie header string.
+        We bypass aiohttp's cookies= parameter to avoid double-encoding
+        the URL-encoded auth token (e.g. %2C being re-encoded to %252C).
+        """
+        return (
+            f"{COOKIE_AUTH}={self.auth_token}; "
+            f"{COOKIE_DEVICE}={COOKIE_DEVICE_VALUE}; "
+            f"{COOKIE_PROJECT}={COOKIE_PROJECT_VALUE}"
+        )
 
     def _api_headers(self) -> dict[str, str]:
         """Headers needed for api.my-tower.co.il (REST API)."""
         return {
-            "Auth-Token": url_decode(self.auth_token),  # header needs decoded value
+            # Auth-Token header uses the URL-decoded value (commas, not %2C)
+            "Auth-Token": url_decode(self.auth_token),
             "Locale": "he",
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -70,10 +75,13 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     def _app_session(self) -> aiohttp.ClientSession:
-        """aiohttp session pre-loaded with app cookies + mobile UA."""
+        """aiohttp session pre-loaded with app cookies + mobile UA.
+        Cookie is sent as a raw header string to avoid double URL-encoding."""
         return aiohttp.ClientSession(
-            cookies=self._app_cookies(),
-            headers=APP_HEADERS,
+            headers={
+                **APP_HEADERS,
+                "Cookie": self._cookie_header(),
+            },
         )
 
     def _api_session(self) -> aiohttp.ClientSession:
@@ -101,6 +109,8 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             async with self._app_session() as session:
                 async with session.get(f"{APP_BASE_URL}/gates") as resp:
                     html = await resp.text()
+                    _LOGGER.debug("gates page status=%s len=%d prefix=%s",
+                                  resp.status, len(html), html[:200])
 
             gates = []
             # Match href="gates/open/{uuid}" — relative or absolute
@@ -139,7 +149,10 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 async with session.post(
                     f"{APP_BASE_URL}/api/get_msgs_num"
                 ) as resp:
-                    result = await resp.json(content_type=None)
+                    text = await resp.text()
+                    _LOGGER.debug("get_msgs_num status=%s body=%s", resp.status, text[:100])
+                    import json as _json
+                    result = _json.loads(text)
                     raw = result.get("data", 0)
                     try:
                         data["messages"] = int(raw) if raw != "" else 0
