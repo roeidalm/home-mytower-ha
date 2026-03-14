@@ -113,16 +113,20 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                   resp.status, len(html), html[:200])
 
             gates = []
-            # Match href="gates/open/{uuid}" — relative or absolute
+            # HTML structure:
+            #   <div class="gate" data-gate-id="{uuid}">
+            #     ...
+            #     <div class="gate_name">שער כניסה</div>
+            #   </div>
             for m in re.finditer(
-                r'href=["\'](?:[^"\']*gates/open/)([0-9a-f-]{36})["\']',
+                r'class=["\'][^"\']*\bgate\b[^"\']*["\'][^>]*data-gate-id=["\']([0-9a-f-]{36})["\']'
+                r'|data-gate-id=["\']([0-9a-f-]{36})["\']',
                 html,
                 re.IGNORECASE,
             ):
-                uuid = m.group(1)
-                # Find the label closest to this href in the surrounding HTML
-                context = html[max(0, m.start() - 50) : m.end() + 300]
-                name_m = re.search(r'<label[^>]*>([^<]+)</label>', context)
+                uuid = m.group(1) or m.group(2)
+                context = html[m.start() : m.start() + 400]
+                name_m = re.search(r'class=["\']gate_name["\'][^>]*>([^<]+)<', context)
                 name = name_m.group(1).strip() if name_m else f"שער {len(gates) + 1}"
                 gates.append({"uuid": uuid, "name": name})
 
