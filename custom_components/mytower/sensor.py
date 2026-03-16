@@ -110,10 +110,10 @@ class MyTowerPaidMonthsSensor(MyTowerBaseSensor):
 
 
 class _MyTowerGuestsBaseSensor(CoordinatorEntity[MyTowerCoordinator], SensorEntity):
-    """Base for guest count sensors."""
+    """Base for guest list sensors — state = comma-separated names."""
 
     _attr_icon = "mdi:account-group"
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # No state_class / unit — state is a human-readable name string
 
     def __init__(
         self,
@@ -137,13 +137,18 @@ class _MyTowerGuestsBaseSensor(CoordinatorEntity[MyTowerCoordinator], SensorEnti
         }
 
     @property
-    def native_value(self) -> int:
-        return self.coordinator.data.get(self._count_key, 0)
+    def native_value(self) -> str:
+        """Return guest names as a comma-separated string, or 'אין אורחים'."""
+        guests = self.coordinator.data.get(self._list_key, [])
+        if not guests:
+            return "אין אורחים"
+        return ", ".join(g.get("name", "?") for g in guests)
 
     @property
     def extra_state_attributes(self) -> dict:
         guests = self.coordinator.data.get(self._list_key, [])
         return {
+            "count": self.coordinator.data.get(self._count_key, 0),
             "guests": guests,
             "names": [g.get("name", "?") for g in guests],
         }
@@ -168,6 +173,7 @@ class MyTowerGuestsSensor(_MyTowerGuestsBaseSensor):
         regular = self.coordinator.data.get("regular_guests", [])
         temporary = self.coordinator.data.get("temporary_guests", [])
         return {
+            "count": len(guests),
             "guests": guests,
             "names": [g.get("name", "?") for g in guests],
             "regular_count": len(regular),
