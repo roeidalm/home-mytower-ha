@@ -273,86 +273,34 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             guests = []
 
-            # ── Strategy 1: id="guest-{N}" (original guess) ──────────────────
-            for m in re.finditer(r'id=["\']guest-(\d+)["\']', html):
-                visitor_id = m.group(1)
+            # href="guests/visitors?visitor_id={N}&visitor_type={type}"
+            # This is the actual HTML structure used by MyTower
+            for m in re.finditer(
+                r'href=["\']guests/visitors\?visitor_id=(\d+)&amp;visitor_type=(\w+)["\']'
+                r'|href=["\']guests/visitors\?visitor_id=(\d+)&visitor_type=(\w+)["\']',
+                html,
+            ):
+                visitor_id = m.group(1) or m.group(3)
+                visitor_type = m.group(2) or m.group(4)
                 block = html[m.start(): m.start() + 700]
-                guests.append(self._parse_guest_block(visitor_id, block))
+                name_m = re.search(
+                    r'class=["\']guest-name["\'][^>]*>\s*([^<]+)<', block
+                )
+                guests.append({
+                    "id": visitor_id,
+                    "name": name_m.group(1).strip() if name_m else "?",
+                    "type": visitor_type,
+                    "phone": "",
+                })
 
-            # ── Strategy 2: data-visitor-id / data-id / data-guest-id ─────────
-            if not guests:
-                for m in re.finditer(
-                    r'data-(?:visitor|guest|item)-id=["\'](\d+)["\']', html
-                ):
-                    visitor_id = m.group(1)
-                    block = html[m.start(): m.start() + 700]
-                    guests.append(self._parse_guest_block(visitor_id, block))
-
-            # ── Strategy 3: visitorId hidden input (form-based pages) ─────────
-            if not guests:
-                for m in re.finditer(
-                    r'name=["\']visitorId["\'][^>]*value=["\'](\d+)["\']'
-                    r'|value=["\'](\d+)["\'][^>]*name=["\']visitorId["\']',
-                    html,
-                ):
-                    visitor_id = m.group(1) or m.group(2)
-                    block = html[max(0, m.start() - 200): m.start() + 700]
-                    guests.append(self._parse_guest_block(visitor_id, block))
-
-            # ── Deduplicate by id ─────────────────────────────────────────────
-            seen: set[str] = set()
-            unique = []
-            for g in guests:
-                if g["id"] not in seen:
-                    seen.add(g["id"])
-                    unique.append(g)
-
-            _LOGGER.info(
-                "MyTower: found %d guest(s) via scraping (strategy used: %s)",
-                len(unique),
-                "1" if unique else "none matched",
-            )
-            return unique
+            _LOGGER.info("MyTower: found %d guest(s)", len(guests))
+            return guests
 
         except Exception as err:
             _LOGGER.error("MyTower: get_guests error: %s", err)
             return []
 
-    @staticmethod
-    def _parse_guest_block(visitor_id: str, block: str) -> dict:
-        """Extract name/type/phone from an HTML block around a guest element."""
-        # Name — try several class patterns
-        name_m = re.search(
-            r'class=["\'][^"\']*(?:guest-name|visitor-name|name)[^"\']*["\'][^>]*>([^<]+)<',
-            block,
-        ) or re.search(r'<(?:h\d|strong|b)[^>]*>([^<]{2,50})</', block)
 
-        # Type — "regular", "temporary", "קבוע", "זמני" etc.
-        type_m = re.search(
-            r'class=["\'][^"\']*(?:guest-type|visitor-type|type)[^"\']*["\'][^>]*>([^<]+)<',
-            block,
-        ) or re.search(
-            r'"visitorType"\s*:\s*"([^"]+)"'
-            r'|data-type=["\']([^"\']+)["\']',
-            block,
-        )
-
-        # Phone
-        phone_m = re.search(
-            r'class=["\'][^"\']*(?:guest-phone|visitor-phone|phone)[^"\']*["\'][^>]*>([^<]+)<',
-            block,
-        ) or re.search(r'(\+?05\d[-\s]?\d{7}|\+?972\d{9})', block)
-
-        raw_type = ""
-        if type_m:
-            raw_type = (type_m.group(1) or type_m.group(2) or "").strip()
-
-        return {
-            "id": visitor_id,
-            "name": name_m.group(1).strip() if name_m else "?",
-            "type": raw_type or "temporary",   # default to temporary when unknown
-            "phone": phone_m.group(1).strip() if phone_m else "",
-        }
 
     async def add_guest(
         self,
