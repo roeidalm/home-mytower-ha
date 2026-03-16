@@ -282,15 +282,28 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ):
                 visitor_id = m.group(1) or m.group(3)
                 visitor_type = m.group(2) or m.group(4)
-                block = html[m.start(): m.start() + 700]
+                # Use a wider block to capture all guest-data fields (name + due date + phone)
+                block = html[m.start(): m.start() + 900]
+
                 name_m = re.search(
                     r'class=["\']guest-name["\'][^>]*>\s*([^<]+)<', block
+                )
+                # Due date: <label>בתוקף עד:</label> <span>DD.MM.YYYY</span>
+                due_m = re.search(
+                    r'בתוקף עד[^<]*</label>\s*<span>\s*([^<]+?)\s*</span>',
+                    block, re.DOTALL,
+                )
+                # Phone: <label>טלפון:</label> <span>0XXXXXXXXX</span>
+                phone_m = re.search(
+                    r'טלפון[^<]*</label>\s*<span>\s*(\d+)\s*</span>',
+                    block, re.DOTALL,
                 )
                 guests.append({
                     "id": visitor_id,
                     "name": name_m.group(1).strip() if name_m else "?",
                     "type": visitor_type,
-                    "phone": "",
+                    "phone": phone_m.group(1).strip() if phone_m else "",
+                    "due_date": due_m.group(1).strip() if due_m else "",
                 })
 
             _LOGGER.info("MyTower: found %d guest(s)", len(guests))
