@@ -11,7 +11,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, ENTITY_MESSAGES, ENTITY_MONTHLY_FEE, ENTITY_PAID_MONTHS, ENTITY_GUESTS_COUNT
+from .const import (
+    DOMAIN,
+    ENTITY_MESSAGES, ENTITY_MONTHLY_FEE, ENTITY_PAID_MONTHS,
+    ENTITY_GUESTS_COUNT, ENTITY_REGULAR_GUESTS_COUNT, ENTITY_TEMPORARY_GUESTS_COUNT,
+)
 from .coordinator import MyTowerCoordinator
 
 
@@ -26,6 +30,8 @@ async def async_setup_entry(
         MyTowerMonthlyFeeSensor(coordinator, entry),
         MyTowerPaidMonthsSensor(coordinator, entry),
         MyTowerGuestsSensor(coordinator, entry),
+        MyTowerRegularGuestsSensor(coordinator, entry),
+        MyTowerTemporaryGuestsSensor(coordinator, entry),
     ])
 
 
@@ -103,16 +109,26 @@ class MyTowerPaidMonthsSensor(MyTowerBaseSensor):
         super().__init__(coordinator, entry, ENTITY_PAID_MONTHS)
 
 
-class MyTowerGuestsSensor(CoordinatorEntity[MyTowerCoordinator], SensorEntity):
-    """Sensor showing number of active guests."""
+class _MyTowerGuestsBaseSensor(CoordinatorEntity[MyTowerCoordinator], SensorEntity):
+    """Base for guest count sensors."""
 
     _attr_icon = "mdi:account-group"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, coordinator: MyTowerCoordinator, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        coordinator: MyTowerCoordinator,
+        entry: ConfigEntry,
+        entity_key: str,
+        count_key: str,
+        list_key: str,
+        name: str,
+    ) -> None:
         super().__init__(coordinator)
-        self._attr_name = "MyTower Active Guests"
-        self._attr_unique_id = f"{entry.entry_id}_{ENTITY_GUESTS_COUNT}"
+        self._count_key = count_key
+        self._list_key = list_key
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.entry_id}_{entity_key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": "MyTower",
@@ -122,8 +138,68 @@ class MyTowerGuestsSensor(CoordinatorEntity[MyTowerCoordinator], SensorEntity):
 
     @property
     def native_value(self) -> int:
-        return self.coordinator.data.get("guests_count", 0)
+        return self.coordinator.data.get(self._count_key, 0)
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"guests": self.coordinator.data.get("guests", [])}
+        guests = self.coordinator.data.get(self._list_key, [])
+        return {
+            "guests": guests,
+            "names": [g.get("name", "?") for g in guests],
+        }
+
+
+class MyTowerGuestsSensor(_MyTowerGuestsBaseSensor):
+    """Total active guests (regular + temporary)."""
+
+    def __init__(self, coordinator: MyTowerCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(
+            coordinator, entry,
+            entity_key=ENTITY_GUESTS_COUNT,
+            count_key="guests_count",
+            list_key="guests",
+            name="MyTower אורחים פעילים",
+        )
+        self._attr_icon = "mdi:account-group"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        guests = self.coordinator.data.get("guests", [])
+        regular = self.coordinator.data.get("regular_guests", [])
+        temporary = self.coordinator.data.get("temporary_guests", [])
+        return {
+            "guests": guests,
+            "names": [g.get("name", "?") for g in guests],
+            "regular_count": len(regular),
+            "temporary_count": len(temporary),
+            "regular": [g.get("name", "?") for g in regular],
+            "temporary": [g.get("name", "?") for g in temporary],
+        }
+
+
+class MyTowerRegularGuestsSensor(_MyTowerGuestsBaseSensor):
+    """Permanent / regular guests."""
+
+    def __init__(self, coordinator: MyTowerCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(
+            coordinator, entry,
+            entity_key=ENTITY_REGULAR_GUESTS_COUNT,
+            count_key="regular_guests_count",
+            list_key="regular_guests",
+            name="MyTower אורחים קבועים",
+        )
+        self._attr_icon = "mdi:account-check"
+
+
+class MyTowerTemporaryGuestsSensor(_MyTowerGuestsBaseSensor):
+    """Temporary / one-time guests."""
+
+    def __init__(self, coordinator: MyTowerCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(
+            coordinator, entry,
+            entity_key=ENTITY_TEMPORARY_GUESTS_COUNT,
+            count_key="temporary_guests_count",
+            list_key="temporary_guests",
+            name="MyTower אורחים זמניים",
+        )
+        self._attr_icon = "mdi:account-clock"

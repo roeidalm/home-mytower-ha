@@ -58,8 +58,10 @@ ENTITY_MONTHLY_FEE = "monthly_fee"
 ENTITY_PAID_MONTHS = "paid_months"
 ENTITY_GATE_PREFIX = "gate_"
 
-# Guest entity
+# Guest entities
 ENTITY_GUESTS_COUNT = "guests_count"
+ENTITY_REGULAR_GUESTS_COUNT = "regular_guests_count"
+ENTITY_TEMPORARY_GUESTS_COUNT = "temporary_guests_count"
 
 # Services
 SERVICE_ADD_GUEST = "add_guest"

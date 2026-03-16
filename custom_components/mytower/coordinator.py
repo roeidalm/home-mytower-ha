@@ -173,10 +173,29 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     html = await resp.text()
                 data.update(self._parse_payments(html))
 
-            # 3. Guests count
+            # 3. Guests count + type split
             guests = await self.get_guests()
             data["guests_count"] = len(guests)
             data["guests"] = guests
+
+            # Separate by type — MyTower uses "regular" / "permanent" / "קבוע" for permanent guests
+            regular = [
+                g for g in guests
+                if g.get("type", "").lower() in ("regular", "permanent", "קבוע", "קבועים")
+            ]
+            temporary = [
+                g for g in guests
+                if g.get("type", "").lower() in ("temporary", "זמני", "זמניים", "חד פעמי")
+            ]
+            # Anything unclassified goes into temporary (safer default)
+            classified_ids = {g["id"] for g in regular} | {g["id"] for g in temporary}
+            unclassified = [g for g in guests if g["id"] not in classified_ids]
+            temporary = temporary + unclassified
+
+            data["regular_guests"] = regular
+            data["regular_guests_count"] = len(regular)
+            data["temporary_guests"] = temporary
+            data["temporary_guests_count"] = len(temporary)
 
             _LOGGER.debug("MyTower data: %s", data)
             return data
@@ -247,25 +266,93 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             async with self._app_session() as session:
                 async with session.get(f"{APP_BASE_URL}/guests") as resp:
                     html = await resp.text()
+                    _LOGGER.debug(
+                        "MyTower: guests page status=%s len=%d preview=%s",
+                        resp.status, len(html), html[:1500],
+                    )
+
             guests = []
+
+            # ── Strategy 1: id="guest-{N}" (original guess) ──────────────────
             for m in re.finditer(r'id=["\']guest-(\d+)["\']', html):
                 visitor_id = m.group(1)
-                start = m.start()
-                block = html[start:start + 600]
-                name_m = re.search(r'class=["\']?guest-name["\']?[^>]*>([^<]+)<', block)
-                type_m = re.search(r'class=["\']?guest-type["\']?[^>]*>([^<]+)<', block)
-                phone_m = re.search(r'class=["\']?guest-phone["\']?[^>]*>([^<]+)<', block)
-                guests.append({
-                    "id": visitor_id,
-                    "name": name_m.group(1).strip() if name_m else "?",
-                    "type": type_m.group(1).strip() if type_m else "?",
-                    "phone": phone_m.group(1).strip() if phone_m else "",
-                })
-            _LOGGER.debug("MyTower: found %d guests", len(guests))
-            return guests
+                block = html[m.start(): m.start() + 700]
+                guests.append(self._parse_guest_block(visitor_id, block))
+
+            # ── Strategy 2: data-visitor-id / data-id / data-guest-id ─────────
+            if not guests:
+                for m in re.finditer(
+                    r'data-(?:visitor|guest|item)-id=["\'](\d+)["\']', html
+                ):
+                    visitor_id = m.group(1)
+                    block = html[m.start(): m.start() + 700]
+                    guests.append(self._parse_guest_block(visitor_id, block))
+
+            # ── Strategy 3: visitorId hidden input (form-based pages) ─────────
+            if not guests:
+                for m in re.finditer(
+                    r'name=["\']visitorId["\'][^>]*value=["\'](\d+)["\']'
+                    r'|value=["\'](\d+)["\'][^>]*name=["\']visitorId["\']',
+                    html,
+                ):
+                    visitor_id = m.group(1) or m.group(2)
+                    block = html[max(0, m.start() - 200): m.start() + 700]
+                    guests.append(self._parse_guest_block(visitor_id, block))
+
+            # ── Deduplicate by id ─────────────────────────────────────────────
+            seen: set[str] = set()
+            unique = []
+            for g in guests:
+                if g["id"] not in seen:
+                    seen.add(g["id"])
+                    unique.append(g)
+
+            _LOGGER.info(
+                "MyTower: found %d guest(s) via scraping (strategy used: %s)",
+                len(unique),
+                "1" if unique else "none matched",
+            )
+            return unique
+
         except Exception as err:
             _LOGGER.error("MyTower: get_guests error: %s", err)
             return []
+
+    @staticmethod
+    def _parse_guest_block(visitor_id: str, block: str) -> dict:
+        """Extract name/type/phone from an HTML block around a guest element."""
+        # Name — try several class patterns
+        name_m = re.search(
+            r'class=["\'][^"\']*(?:guest-name|visitor-name|name)[^"\']*["\'][^>]*>([^<]+)<',
+            block,
+        ) or re.search(r'<(?:h\d|strong|b)[^>]*>([^<]{2,50})</', block)
+
+        # Type — "regular", "temporary", "קבוע", "זמני" etc.
+        type_m = re.search(
+            r'class=["\'][^"\']*(?:guest-type|visitor-type|type)[^"\']*["\'][^>]*>([^<]+)<',
+            block,
+        ) or re.search(
+            r'"visitorType"\s*:\s*"([^"]+)"'
+            r'|data-type=["\']([^"\']+)["\']',
+            block,
+        )
+
+        # Phone
+        phone_m = re.search(
+            r'class=["\'][^"\']*(?:guest-phone|visitor-phone|phone)[^"\']*["\'][^>]*>([^<]+)<',
+            block,
+        ) or re.search(r'(\+?05\d[-\s]?\d{7}|\+?972\d{9})', block)
+
+        raw_type = ""
+        if type_m:
+            raw_type = (type_m.group(1) or type_m.group(2) or "").strip()
+
+        return {
+            "id": visitor_id,
+            "name": name_m.group(1).strip() if name_m else "?",
+            "type": raw_type or "temporary",   # default to temporary when unknown
+            "phone": phone_m.group(1).strip() if phone_m else "",
+        }
 
     async def add_guest(
         self,
