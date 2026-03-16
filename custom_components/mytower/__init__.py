@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -19,27 +18,6 @@ from .coordinator import MyTowerCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor", "button"]
-
-_COMPONENT_PATH = Path(__file__).parent
-
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register static paths for brand assets (icon + logo)."""
-    try:
-        hass.http.register_static_path(
-            f"/api/brands/custom_integrations/{DOMAIN}/icon.png",
-            str(_COMPONENT_PATH / "icon.png"),
-            cache_headers=False,
-        )
-        hass.http.register_static_path(
-            f"/api/brands/custom_integrations/{DOMAIN}/logo.png",
-            str(_COMPONENT_PATH / "images" / "logo.png"),
-            cache_headers=False,
-        )
-        _LOGGER.debug("MyTower: registered brand static paths")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("MyTower: static path already registered: %s", err)
-    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
