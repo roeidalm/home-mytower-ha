@@ -63,6 +63,9 @@ ENTITY_GUESTS_COUNT = "guests_count"
 ENTITY_REGULAR_GUESTS_COUNT = "regular_guests_count"
 ENTITY_TEMPORARY_GUESTS_COUNT = "temporary_guests_count"
 
+# Tower updates entity
+ENTITY_TOWER_UPDATES = "tower_updates"
+
 # Services
 SERVICE_ADD_GUEST = "add_guest"
 SERVICE_REMOVE_GUEST = "remove_guest"

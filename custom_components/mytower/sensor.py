@@ -15,6 +15,7 @@ from .const import (
     DOMAIN,
     ENTITY_MESSAGES, ENTITY_MONTHLY_FEE, ENTITY_PAID_MONTHS,
     ENTITY_GUESTS_COUNT, ENTITY_REGULAR_GUESTS_COUNT, ENTITY_TEMPORARY_GUESTS_COUNT,
+    ENTITY_TOWER_UPDATES,
 )
 from .coordinator import MyTowerCoordinator
 
@@ -32,6 +33,7 @@ async def async_setup_entry(
         MyTowerGuestsSensor(coordinator, entry),
         MyTowerRegularGuestsSensor(coordinator, entry),
         MyTowerTemporaryGuestsSensor(coordinator, entry),
+        MyTowerTowerUpdatesSensor(coordinator, entry),
     ])
 
 
@@ -209,3 +211,63 @@ class MyTowerTemporaryGuestsSensor(_MyTowerGuestsBaseSensor):
             name="MyTower אורחים זמניים",
         )
         self._attr_icon = "mdi:account-clock"
+
+
+class MyTowerTowerUpdatesSensor(CoordinatorEntity[MyTowerCoordinator], SensorEntity):
+    """Tower building updates.
+
+    State: JSON string with date, title, and full content of the latest update.
+    This way it appears correctly in HA history with full context.
+    Attributes: list of all updates (summary only, no full content fetch for older ones).
+    """
+
+    _attr_name = "MyTower עדכוני בניין"
+    _attr_icon = "mdi:bulletin-board"
+    # No state_class / unit — state is a JSON text string
+
+    def __init__(self, coordinator: MyTowerCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_{ENTITY_TOWER_UPDATES}"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "MyTower",
+            "manufacturer": "MyTower",
+            "model": "Building Management",
+        }
+
+    @property
+    def native_value(self) -> str:
+        """Return a JSON string with date, title and content of the latest update.
+
+        Example:
+          {"date": "05/04/26", "title": "חבלה במחסום", "content": "דיירים נכבדים..."}
+
+        Storing as JSON keeps the state human-readable in HA history while
+        including all three fields in a single tracked value.
+        """
+        import json
+        latest = self.coordinator.data.get("tower_updates_latest")
+        if not latest:
+            return json.dumps({"date": "", "title": "אין עדכונים", "content": ""}, ensure_ascii=False)
+        return json.dumps({
+            "date": latest.get("date", ""),
+            "title": latest.get("title", ""),
+            "content": latest.get("content", latest.get("summary", "")),
+        }, ensure_ascii=False)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Expose all updates for automations and Lovelace cards."""
+        updates = self.coordinator.data.get("tower_updates", [])
+        return {
+            "count": self.coordinator.data.get("tower_updates_count", 0),
+            "updates": [
+                {
+                    "date": u.get("date", ""),
+                    "title": u.get("title", ""),
+                    "summary": u.get("summary", ""),
+                    "url": u.get("url", ""),
+                }
+                for u in updates
+            ],
+        }

@@ -26,6 +26,7 @@ from .const import (
     MOBILE_UA,
     APP_HEADERS,
     CONF_PHONE,
+    ENTITY_TOWER_UPDATES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -173,7 +174,26 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     html = await resp.text()
                 data.update(self._parse_payments(html))
 
-            # 3. Guests count + type split
+            # 3. Tower updates — list page
+            async with session.get(
+                f"{APP_BASE_URL}/tower_services/towerUpdates"
+            ) as resp:
+                updates_html = await resp.text()
+            updates_list = self._parse_tower_updates(updates_html)
+
+            # Fetch full content for the latest update only (to avoid hammering the server)
+            if updates_list:
+                latest = updates_list[0]
+                async with session.get(latest["url"]) as resp:
+                    detail_html = await resp.text()
+                latest["content"] = self._parse_update_detail(detail_html)
+                updates_list[0] = latest
+
+            data["tower_updates"] = updates_list
+            data["tower_updates_count"] = len(updates_list)
+            data["tower_updates_latest"] = updates_list[0] if updates_list else None
+
+            # 4. Guests count + type split
             guests = await self.get_guests()
             data["guests_count"] = len(guests)
             data["guests"] = guests
@@ -235,6 +255,82 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "paid_months": paid_count,
             "payment_year": year,
         }
+
+    @staticmethod
+    def _parse_update_detail(html: str) -> str:
+        """Extract full text content from a single tower update page.
+
+        Page structure:
+          <h1>כותרת</h1>
+          <div class="tower-update-info">
+            <div class="time">DD/MM/YY</div>
+            <div class="content"><p>...</p></div>
+          </div>
+        """
+        # Find the content div
+        m = re.search(r'class=["\']content["\'][^>]*>(.*?)</div>', html, re.DOTALL)
+        if not m:
+            return ""
+        raw = m.group(1).strip()
+        # Strip HTML tags, normalize whitespace
+        text = re.sub(r'<[^>]+>', '', raw)
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'&amp;', '&', text)
+        text = re.sub(r'&#\d+;', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    @staticmethod
+    def _parse_tower_updates(html: str) -> list[dict]:
+        """Extract tower update items from /tower_services/towerUpdates HTML.
+
+        Each item looks like:
+          <a href="tower_services/towerUpdate?id={uuid}" class="tower-update" data-search="{title}">
+            <div class="time">DD/MM/YY</div>
+            <div class="title">...</div>
+            <div class="content">...</div>
+          </a>
+        """
+        updates = []
+        for m in re.finditer(
+            r'<a[^>]+href=["\']tower_services/towerUpdate\?id=([0-9a-f-]{36})["\'][^>]*class=["\']tower-update["\']'
+            r'|<a[^>]+class=["\']tower-update["\'][^>]*href=["\']tower_services/towerUpdate\?id=([0-9a-f-]{36})["\']',
+            html,
+        ):
+            uuid = m.group(1) or m.group(2)
+
+            # Extract data-search (title fallback) from the opening <a> tag itself
+            tag_end = html.find('>', m.start()) + 1
+            opening_tag = html[m.start(): tag_end]
+            data_search_m = re.search(r'data-search=["\']([^"\']+)["\']', opening_tag)
+            data_search_title = data_search_m.group(1).strip() if data_search_m else ""
+
+            # Grab a wider block (~3000 chars) to handle large SVG icons between time and title
+            block = html[m.start(): m.start() + 3000]
+
+            date_m = re.search(r'class=["\']time["\'][^>]*>\s*([^<]+?)\s*</div>', block)
+            title_m = re.search(r'class=["\']title["\'][^>]*>\s*([^<]+?)\s*</div>', block)
+            content_m = re.search(r'class=["\']content["\'][^>]*>(.*?)</div>', block, re.DOTALL)
+            img_m = re.search(r'<img\s+src=["\']([^"\']+)["\']', block)
+
+            content_raw = content_m.group(1).strip() if content_m else ""
+            # Strip inner HTML tags from content snippet
+            content_text = re.sub(r'<[^>]+>', '', content_raw).strip()
+
+            # Use <div class="title"> if found, otherwise fall back to data-search attribute
+            title = (title_m.group(1).strip() if title_m else "") or data_search_title
+
+            updates.append({
+                "id": uuid,
+                "date": date_m.group(1).strip() if date_m else "",
+                "title": title,
+                "summary": content_text[:200] if content_text else "",
+                "url": f"{APP_BASE_URL}/tower_services/towerUpdate?id={uuid}",
+                "image": img_m.group(1) if img_m else None,
+            })
+
+        _LOGGER.info("MyTower: found %d tower update(s)", len(updates))
+        return updates
 
     # ──────────────────────────────────────────────
     # Actions
