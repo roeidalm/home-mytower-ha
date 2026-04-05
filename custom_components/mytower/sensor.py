@@ -237,35 +237,27 @@ class MyTowerTowerUpdatesSensor(CoordinatorEntity[MyTowerCoordinator], SensorEnt
 
     @property
     def native_value(self) -> str:
-        """Return 'DD/MM/YY — title' of the latest update (max 255 chars).
+        """Return content snippet of the latest update (max 255 chars).
 
-        HA limits state to 255 characters, so we keep only date + title here.
-        The full content is exposed via extra_state_attributes so it can be
-        accessed in automations and appears in the history detail panel.
+        State = content text so that HA history shows what the update is about.
+        Date and title are exposed as attributes.
         """
         latest = self.coordinator.data.get("tower_updates_latest")
         if not latest:
             return "אין עדכונים"
-        date = latest.get("date", "")
-        title = latest.get("title", "")
-        value = f"{date} — {title}" if date else title
-        return value[:255]
+        content = latest.get("content") or latest.get("summary", "")
+        return content[:255] if content else latest.get("title", "")[:255]
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Expose full content + all updates for automations and Lovelace cards.
-
-        The 'latest_content' field contains the full text of the most recent
-        update — this is what appears in the history detail panel and is
-        accessible via template sensors / automations.
-        """
+        """Expose date, title, full content and all updates list."""
         latest = self.coordinator.data.get("tower_updates_latest")
         updates = self.coordinator.data.get("tower_updates", [])
         return {
+            "date": latest.get("date", "") if latest else "",
+            "title": latest.get("title", "") if latest else "",
+            "content": latest.get("content", latest.get("summary", "")) if latest else "",
             "count": self.coordinator.data.get("tower_updates_count", 0),
-            "latest_date": latest.get("date", "") if latest else "",
-            "latest_title": latest.get("title", "") if latest else "",
-            "latest_content": latest.get("content", latest.get("summary", "")) if latest else "",
             "updates": [
                 {
                     "date": u.get("date", ""),
