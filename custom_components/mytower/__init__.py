@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+import homeassistant.helpers.config_validation as cv
 
 from .const import (
     DOMAIN, CONF_AUTH_TOKEN, CONF_USER_ID, CONF_PHONE,
@@ -18,6 +20,42 @@ from .coordinator import MyTowerCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor", "button"]
+
+SERVICE_ADD_GUEST_SCHEMA = vol.Schema({
+    vol.Required("name"): cv.string,
+    vol.Required("phone"): cv.string,
+    vol.Optional("guest_type", default="temporary"): vol.In(["temporary", "regular"]),
+    vol.Optional("meeting_place", default="lobby"): vol.In(["lobby", "apartment"]),
+    vol.Optional("date"): cv.string,
+    vol.Optional("description", default=""): cv.string,
+    vol.Optional("car_number", default=""): cv.string,
+})
+
+SERVICE_REMOVE_GUEST_SCHEMA = vol.Schema({
+    vol.Required("visitor_id"): cv.string,
+    vol.Optional("visitor_type", default="temporary"): vol.In(["temporary", "regular"]),
+})
+
+SERVICE_SUBMIT_PROBLEM_SCHEMA = vol.Schema({
+    vol.Required("category"): vol.In(list(PROBLEM_CATEGORIES.keys())),
+    vol.Required("location"): vol.In(list(PROBLEM_LOCATIONS.keys())),
+    vol.Required("description"): cv.string,
+    vol.Optional("sub_category", default="maintenance_other"): vol.In(list(PROBLEM_SUB_CATEGORIES.keys())),
+    vol.Optional("phone"): cv.string,
+})
+
+
+def _get_coordinator(hass: HomeAssistant, call: ServiceCall) -> MyTowerCoordinator:
+    """Get the coordinator for a service call.
+
+    If entry_id is provided in the service call data, use that specific entry.
+    Otherwise fall back to the first (and usually only) entry.
+    """
+    entries = hass.data[DOMAIN]
+    entry_id = call.data.get("entry_id")
+    if entry_id and entry_id in entries:
+        return entries[entry_id]
+    return next(iter(entries.values()))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -48,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             date = call.data.get("date")
             description = call.data.get("description", "")
             car_number = call.data.get("car_number", "")
-            coord = next(iter(hass.data[DOMAIN].values()))
+            coord = _get_coordinator(hass, call)
             success = await coord.add_guest(
                 name, phone, guest_type, meeting_place,
                 date=date, description=description, car_number=car_number,
@@ -60,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def handle_remove_guest(call: ServiceCall) -> None:
             visitor_id = call.data["visitor_id"]
             visitor_type = call.data.get("visitor_type", "temporary")
-            coord = next(iter(hass.data[DOMAIN].values()))
+            coord = _get_coordinator(hass, call)
             success = await coord.remove_guest(visitor_id, visitor_type)
             if not success:
                 _LOGGER.error("MyTower: remove_guest failed for id %s", visitor_id)
@@ -71,18 +109,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             location_key = call.data["location"]
             sub_category_key = call.data.get("sub_category", "maintenance_other")
             description = call.data["description"]
-            phone = call.data.get("phone") or None  # None → coordinator uses registered phone
+            phone = call.data.get("phone") or None
             category_id = PROBLEM_CATEGORIES.get(category_key, 35)
             location_id = PROBLEM_LOCATIONS.get(location_key, 15362)
             sub_category_id = PROBLEM_SUB_CATEGORIES.get(sub_category_key, 6113)
-            coord = next(iter(hass.data[DOMAIN].values()))
+            coord = _get_coordinator(hass, call)
             success = await coord.submit_problem(category_id, sub_category_id, location_id, description, phone=phone)
             if not success:
                 _LOGGER.error("MyTower: submit_problem failed")
 
-        hass.services.async_register(DOMAIN, SERVICE_ADD_GUEST, handle_add_guest)
-        hass.services.async_register(DOMAIN, SERVICE_REMOVE_GUEST, handle_remove_guest)
-        hass.services.async_register(DOMAIN, SERVICE_SUBMIT_PROBLEM, handle_submit_problem)
+        hass.services.async_register(DOMAIN, SERVICE_ADD_GUEST, handle_add_guest, schema=SERVICE_ADD_GUEST_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_REMOVE_GUEST, handle_remove_guest, schema=SERVICE_REMOVE_GUEST_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_SUBMIT_PROBLEM, handle_submit_problem, schema=SERVICE_SUBMIT_PROBLEM_SCHEMA)
 
     return True
 

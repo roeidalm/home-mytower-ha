@@ -16,7 +16,6 @@ CONF_USER_ID = "user_id"
 COOKIE_AUTH = "CRM_user_users"
 COOKIE_DEVICE = "CRM_device"
 COOKIE_DEVICE_VALUE = "ANDROID"
-COOKIE_LANG = "CRM_siteLang"
 COOKIE_PROJECT = "sub_project"
 COOKIE_PROJECT_VALUE = "mytower"
 
@@ -40,16 +39,6 @@ AJAX_HEADERS = {
     "Origin": "https://app.my-tower.co.il",
     "Referer": "https://app.my-tower.co.il/",
     "Accept": "application/json, text/javascript, */*; q=0.01",
-}
-
-# Login uses form submit (NOT XHR) — server returns redirect to /index.php?user_id=XXXX
-# X-Requested-With must NOT be set here, or server returns JSON instead of redirect
-LOGIN_HEADERS = {
-    "User-Agent": MOBILE_UA,
-    "Content-Type": "application/x-www-form-urlencoded",
-    "Origin": "https://app.my-tower.co.il",
-    "Referer": "https://app.my-tower.co.il/",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
 # Entity unique ID prefixes
