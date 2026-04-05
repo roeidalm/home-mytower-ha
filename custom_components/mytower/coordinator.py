@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
-import urllib.parse
 from datetime import timedelta
 from urllib.parse import unquote as url_decode
 from typing import Any
@@ -25,8 +25,6 @@ from .const import (
     COOKIE_PROJECT_VALUE,
     MOBILE_UA,
     APP_HEADERS,
-    CONF_PHONE,
-    ENTITY_TOWER_UPDATES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,8 +156,7 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ) as resp:
                     text = await resp.text()
                     _LOGGER.debug("get_msgs_num status=%s body=%s", resp.status, text[:100])
-                    import json as _json
-                    result = _json.loads(text)
+                    result = json.loads(text)
                     raw = result.get("data", 0)
                     try:
                         data["messages"] = int(raw) if raw != "" else 0
@@ -464,9 +461,8 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ) as resp:
                     raw = await resp.text()
                     _LOGGER.debug("MyTower: add_guest raw response: %s", raw)
-                    import json as _json
                     try:
-                        outer = _json.loads(raw)
+                        outer = json.loads(raw)
                         # Response: {"data": {"result": "success", "msg": "..."}}
                         result = outer.get("data", outer) if isinstance(outer, dict) else {}
                     except Exception:
@@ -489,9 +485,8 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ) as resp:
                     raw = await resp.text()
                     _LOGGER.debug("MyTower: remove_guest raw response: %s", raw)
-                    import json as _json
                     try:
-                        outer = _json.loads(raw)
+                        outer = json.loads(raw)
                         result = outer.get("data", outer) if isinstance(outer, dict) else {}
                     except Exception:
                         result = {}
@@ -534,75 +529,3 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.error("MyTower: submit_problem error: %s", err)
             return False
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Static login helpers (used by config_flow, not the coordinator)
-# ──────────────────────────────────────────────────────────────────────────────
-
-async def mytower_check_phone(phone: str) -> bool:
-    """
-    POST /api/checkPhone — triggers SMS OTP.
-    phone: digits only, no leading 0, no country code (e.g. "501234567")
-    Returns True if server accepted the phone.
-    """
-    # Strip leading 0 and any country prefix
-    clean = re.sub(r'^\+?972', '', phone).lstrip('0')
-    payload = {"phone": clean, "country": "972"}
-
-    async with aiohttp.ClientSession(headers=APP_HEADERS) as session:
-        async with session.post(
-            f"{APP_BASE_URL}/api/checkPhone",
-            data=payload,
-        ) as resp:
-            result = await resp.json(content_type=None)
-            return result.get("data") is True
-
-
-async def mytower_login(phone: str, code: str) -> dict[str, str] | None:
-    """
-    POST /api/login — exchange OTP for session.
-    Returns {"auth_token": ..., "user_id": ...} on success, None on failure.
-
-    phone: full E.164 without '+' (e.g. "972501234567")
-    code:  6-digit OTP string
-    """
-    # Normalise phone to E.164 without +
-    clean = re.sub(r'^\+', '', phone)
-    if not clean.startswith('972'):
-        clean = '972' + clean.lstrip('0')
-
-    payload = {"phone": clean, "code": code}
-
-    jar = aiohttp.CookieJar(unsafe=True)
-    async with aiohttp.ClientSession(
-        cookie_jar=jar, headers=APP_HEADERS
-    ) as session:
-        async with session.post(
-            f"{APP_BASE_URL}/api/login",
-            data=payload,
-            allow_redirects=True,
-            max_redirects=5,
-        ) as resp:
-            final_url = str(resp.url)
-
-            # Extract user_id from redirect URL: index.php?user_id=XXXXX
-            uid_m = re.search(r'user_id=(\d+)', final_url)
-            if not uid_m:
-                _LOGGER.error("MyTower login: no user_id in redirect URL: %s", final_url)
-                return None
-
-            user_id = uid_m.group(1)
-
-            # Extract CRM_user_users cookie (URL-decoded)
-            auth_token = None
-            for cookie in jar:
-                if cookie.key == COOKIE_AUTH:
-                    auth_token = urllib.parse.unquote(cookie.value)
-                    break
-
-            if not auth_token:
-                _LOGGER.error("MyTower login: CRM_user_users cookie not found")
-                return None
-
-            return {"auth_token": auth_token, "user_id": user_id}

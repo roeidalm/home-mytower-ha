@@ -14,9 +14,7 @@
         "data": {
           "otp": "קוד SMS"
         }
-      }
-    },
-    "step": {
+      },
       "reauth_confirm": {
         "title": "MyTower — אימות מחדש",
         "description": "הטוקן פג תוקף. אמת מחדש עם מספר הטלפון שלך.",
