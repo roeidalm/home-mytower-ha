@@ -237,30 +237,35 @@ class MyTowerTowerUpdatesSensor(CoordinatorEntity[MyTowerCoordinator], SensorEnt
 
     @property
     def native_value(self) -> str:
-        """Return a JSON string with date, title and content of the latest update.
+        """Return 'DD/MM/YY — title' of the latest update (max 255 chars).
 
-        Example:
-          {"date": "05/04/26", "title": "חבלה במחסום", "content": "דיירים נכבדים..."}
-
-        Storing as JSON keeps the state human-readable in HA history while
-        including all three fields in a single tracked value.
+        HA limits state to 255 characters, so we keep only date + title here.
+        The full content is exposed via extra_state_attributes so it can be
+        accessed in automations and appears in the history detail panel.
         """
-        import json
         latest = self.coordinator.data.get("tower_updates_latest")
         if not latest:
-            return json.dumps({"date": "", "title": "אין עדכונים", "content": ""}, ensure_ascii=False)
-        return json.dumps({
-            "date": latest.get("date", ""),
-            "title": latest.get("title", ""),
-            "content": latest.get("content", latest.get("summary", "")),
-        }, ensure_ascii=False)
+            return "אין עדכונים"
+        date = latest.get("date", "")
+        title = latest.get("title", "")
+        value = f"{date} — {title}" if date else title
+        return value[:255]
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Expose all updates for automations and Lovelace cards."""
+        """Expose full content + all updates for automations and Lovelace cards.
+
+        The 'latest_content' field contains the full text of the most recent
+        update — this is what appears in the history detail panel and is
+        accessible via template sensors / automations.
+        """
+        latest = self.coordinator.data.get("tower_updates_latest")
         updates = self.coordinator.data.get("tower_updates", [])
         return {
             "count": self.coordinator.data.get("tower_updates_count", 0),
+            "latest_date": latest.get("date", "") if latest else "",
+            "latest_title": latest.get("title", "") if latest else "",
+            "latest_content": latest.get("content", latest.get("summary", "")) if latest else "",
             "updates": [
                 {
                     "date": u.get("date", ""),
