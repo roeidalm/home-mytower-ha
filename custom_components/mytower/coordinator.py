@@ -174,24 +174,31 @@ class MyTowerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     html = await resp.text()
                 data.update(self._parse_payments(html))
 
-            # 3. Tower updates — list page
-            async with session.get(
-                f"{APP_BASE_URL}/tower_services/towerUpdates"
-            ) as resp:
-                updates_html = await resp.text()
-            updates_list = self._parse_tower_updates(updates_html)
+            # 3. Tower updates — list page (wrapped in try/except so failure here
+            #    doesn't bring down the entire coordinator refresh)
+            try:
+                async with session.get(
+                    f"{APP_BASE_URL}/tower_services/towerUpdates"
+                ) as resp:
+                    updates_html = await resp.text()
+                updates_list = self._parse_tower_updates(updates_html)
 
-            # Fetch full content for the latest update only (to avoid hammering the server)
-            if updates_list:
-                latest = updates_list[0]
-                async with session.get(latest["url"]) as resp:
-                    detail_html = await resp.text()
-                latest["content"] = self._parse_update_detail(detail_html)
-                updates_list[0] = latest
+                # Fetch full content for the latest update only
+                if updates_list:
+                    latest = updates_list[0]
+                    async with session.get(latest["url"]) as resp:
+                        detail_html = await resp.text()
+                    latest["content"] = self._parse_update_detail(detail_html)
+                    updates_list[0] = latest
 
-            data["tower_updates"] = updates_list
-            data["tower_updates_count"] = len(updates_list)
-            data["tower_updates_latest"] = updates_list[0] if updates_list else None
+                data["tower_updates"] = updates_list
+                data["tower_updates_count"] = len(updates_list)
+                data["tower_updates_latest"] = updates_list[0] if updates_list else None
+            except Exception as updates_err:
+                _LOGGER.warning("MyTower: tower updates fetch failed (non-fatal): %s", updates_err)
+                data.setdefault("tower_updates", [])
+                data.setdefault("tower_updates_count", 0)
+                data.setdefault("tower_updates_latest", None)
 
             # 4. Guests count + type split
             guests = await self.get_guests()
