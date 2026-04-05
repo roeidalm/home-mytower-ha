@@ -237,16 +237,19 @@ class MyTowerTowerUpdatesSensor(CoordinatorEntity[MyTowerCoordinator], SensorEnt
 
     @property
     def native_value(self) -> str:
-        """Return content snippet of the latest update (max 255 chars).
+        """Return 'DD/MM/YY — TITLE: CONTENT...' trimmed to 255 chars.
 
-        State = content text so that HA history shows what the update is about.
-        Date and title are exposed as attributes.
+        Combines date, title and content so all three are visible in HA history.
         """
         latest = self.coordinator.data.get("tower_updates_latest")
         if not latest:
             return "אין עדכונים"
+        date = latest.get("date", "")
+        title = latest.get("title", "")
         content = latest.get("content") or latest.get("summary", "")
-        return content[:255] if content else latest.get("title", "")[:255]
+        header = f"{date} — {title}: " if date else f"{title}: "
+        remaining = 255 - len(header)
+        return (header + content[:remaining]) if remaining > 0 else header[:255]
 
     @property
     def extra_state_attributes(self) -> dict:
